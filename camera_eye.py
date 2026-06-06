@@ -4,9 +4,17 @@ usage:
   python camera_eye.py capture           # grab one frame -> latest_path
   python camera_eye.py pan left 0.6      # pan/tilt for 0.6 seconds
   python camera_eye.py status            # show config + connectivity
+  python camera_eye.py setup-pass        # save password to OS keyring (once)
+  python camera_eye.py forget-pass       # remove keyring entry
+
+password resolution order:
+  1. CAMERA_EYE_PASS env var (transient, this shell only)
+  2. OS keyring (Windows Credential Manager / macOS Keychain / Secret Service)
+     service="camera-eye", username=cfg.auth.user
+  3. abort with a hint to run `setup-pass`
 
 env:
-  CAMERA_EYE_PASS  required, the ONVIF account password.
+  CAMERA_EYE_PASS  optional, overrides keyring. The ONVIF account password.
   CAMERA_EYE_CONFIG  optional, path to config.toml (default ~/.camera-eye/config.toml).
 """
 
@@ -27,7 +35,10 @@ import urllib.error
 import urllib.request
 
 
-def load_config():
+KEYRING_SERVICE = "camera-eye"
+
+
+def _read_config_only():
     path = os.environ.get(
         "CAMERA_EYE_CONFIG",
         str(pathlib.Path.home() / ".camera-eye" / "config.toml"),
@@ -35,10 +46,31 @@ def load_config():
     if not os.path.exists(path):
         sys.exit(f"config not found: {path}")
     with open(path, "rb") as f:
-        cfg = tomllib.load(f)
+        return tomllib.load(f)
+
+
+def _load_password_from_keyring(user):
+    try:
+        import keyring
+    except ImportError:
+        return None
+    try:
+        return keyring.get_password(KEYRING_SERVICE, user)
+    except Exception:
+        return None
+
+
+def load_config():
+    cfg = _read_config_only()
+    user = cfg["auth"]["user"]
     pw = os.environ.get("CAMERA_EYE_PASS", "")
     if not pw:
-        sys.exit("CAMERA_EYE_PASS env var is required")
+        pw = _load_password_from_keyring(user) or ""
+    if not pw:
+        sys.exit(
+            "no password available. set CAMERA_EYE_PASS env, "
+            "or run `camera-eye setup-pass` once to save it in the OS keyring."
+        )
     cfg["auth"]["password"] = pw
     latest = cfg["capture"]["latest_path"]
     latest = string.Template(latest).safe_substitute(HOME=str(pathlib.Path.home()))
@@ -374,12 +406,46 @@ def cmd_setup():
     print("next: set CAMERA_EYE_PASS env var, then run `camera-eye status`.")
 
 
+def cmd_setup_pass():
+    try:
+        import keyring
+    except ImportError:
+        sys.exit("keyring lib not installed: pip install keyring")
+    cfg = _read_config_only()
+    user = cfg["auth"]["user"]
+    import getpass
+    pw = getpass.getpass(f"password for {user!r} (camera-eye keyring): ")
+    if not pw:
+        sys.exit("empty password, aborted")
+    keyring.set_password(KEYRING_SERVICE, user, pw)
+    print(
+        f"saved to OS keyring (service={KEYRING_SERVICE!r}, user={user!r}). "
+        "future runs read it automatically, no env var needed."
+    )
+
+
+def cmd_forget_pass():
+    try:
+        import keyring
+    except ImportError:
+        sys.exit("keyring lib not installed")
+    cfg = _read_config_only()
+    user = cfg["auth"]["user"]
+    try:
+        keyring.delete_password(KEYRING_SERVICE, user)
+        print(f"removed entry (service={KEYRING_SERVICE!r}, user={user!r}).")
+    except Exception as e:
+        sys.exit(f"could not delete: {e}")
+
+
 def main():
     p = argparse.ArgumentParser(prog="camera-eye")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("capture")
     sub.add_parser("status")
     sub.add_parser("setup")
+    sub.add_parser("setup-pass", help="save ONVIF password to OS keyring (run once)")
+    sub.add_parser("forget-pass", help="remove the keyring entry")
     pan = sub.add_parser("pan")
     pan.add_argument("direction", choices=list(VEL))
     pan.add_argument("seconds", type=float, nargs="?", default=0.5)
@@ -392,6 +458,12 @@ def main():
     args = p.parse_args()
     if args.cmd == "setup":
         cmd_setup()
+        return
+    if args.cmd == "setup-pass":
+        cmd_setup_pass()
+        return
+    if args.cmd == "forget-pass":
+        cmd_forget_pass()
         return
     cfg = load_config()
     if args.cmd == "capture":
