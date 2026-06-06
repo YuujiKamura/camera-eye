@@ -1,0 +1,17 @@
+# Real config lives at ~/.camera-eye/config.toml (gitignored).
+# Copy this to ~/.camera-eye/config.toml and fill in.
+
+[camera]
+host = "192.168.2.117"
+onvif_port = 2020
+rtsp_port = 554
+rtsp_path = "stream1"
+
+[auth]
+user = "your-onvif-username"
+# password is read from env var CAMERA_EYE_PASS only.
+# Never set it in this file.
+
+[capture]
+# Where the latest captured frame goes. ${HOME} is expanded.
+latest_path = "${HOME}/.camera-eye/latest.jpg"

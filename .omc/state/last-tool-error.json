@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"sqlite3 ~/.skill-miner/index.sqlite \\\"SELECT date(timestamp), substr(content,1,120) FROM prompt_history WHERE content LIKE '%camera%' OR content LIKE '%onvif%' OR content LIKE '%tapo%' OR ...",
+  "error": "Exit code 1\nParse error in 2nd command line argument: no such column: content\r\n  SELECT date(timestamp), substr(content,1,120) FROM prompt_history WHERE conten\r\n                   error here ---^",
+  "timestamp": "2026-06-06T04:09:25.733Z",
+  "retry_count": 1
+}
