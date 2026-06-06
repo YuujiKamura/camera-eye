@@ -6,3 +6,5 @@ __pycache__/
 *.mjpeg
 latest.*
 config.toml
+.omc/
+.claude/
