@@ -245,6 +245,24 @@ def cmd_watch_status(cfg):
     print(f"running pid={pid}, last frame: {age}")
 
 
+def cmd_zoom(cfg, bbox):
+    try:
+        from PIL import Image
+    except ImportError:
+        sys.exit("zoom needs Pillow: pip install Pillow")
+    src = pathlib.Path(cfg["capture"]["latest_path"])
+    if not src.exists():
+        sys.exit(f"no frame yet: {src}")
+    l, t, r, b = bbox
+    if not (0.0 <= l < r <= 1.0 and 0.0 <= t < b <= 1.0):
+        sys.exit(f"bad bbox: {bbox}, want 0<=L<R<=1 and 0<=T<B<=1")
+    im = Image.open(src)
+    w, h = im.size
+    out = src.parent / "zoom.jpg"
+    im.crop((int(w * l), int(h * t), int(w * r), int(h * b))).save(out)
+    print(out)
+
+
 VEL = {
     "left": ("0.5", "0.0"),
     "right": ("-0.5", "0.0"),
@@ -367,6 +385,10 @@ def main():
     pan.add_argument("seconds", type=float, nargs="?", default=0.5)
     watch = sub.add_parser("watch")
     watch.add_argument("action", choices=["start", "stop", "status"])
+    zoom = sub.add_parser("zoom")
+    zoom.add_argument("--bbox", nargs=4, type=float, default=[0.45, 0.05, 0.95, 0.65],
+                      metavar=("L", "T", "R", "B"),
+                      help="relative crop box, 0..1 each (default centers on right half)")
     args = p.parse_args()
     if args.cmd == "setup":
         cmd_setup()
@@ -385,6 +407,8 @@ def main():
             cmd_watch_stop(cfg)
         else:
             cmd_watch_status(cfg)
+    elif args.cmd == "zoom":
+        cmd_zoom(cfg, args.bbox)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ ONVIF + RTSP で部屋のカメラに「見る目」を持たせる CLI。Tapo C
 - `capture` — 最新フレームを 1 枚 JPEG で取得
 - `pan {left|right|up|down} [seconds]` — パン/チルト
 - `watch start|stop|status` — 1 fps の常時取得 daemon。動かしておくと `capture` が file 返すだけになりレスポンスが上がる
+- `zoom [--bbox L T R B]` — 直近フレームを相対座標で crop して `zoom.jpg` に書き出す。文字を読みたい時に使う (Pillow が必要)
 - `status` — 設定と ONVIF 疎通の確認
 - `setup` — 設定ファイル対話作成
 
