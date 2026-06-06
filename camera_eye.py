@@ -406,6 +406,61 @@ def cmd_setup():
     print("next: set CAMERA_EYE_PASS env var, then run `camera-eye status`.")
 
 
+def cmd_listen_once(cfg, seconds, model_size, prompt):
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        sys.exit("faster-whisper not installed: pip install faster-whisper")
+    audio_dir = pathlib.Path.home() / ".camera-eye"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = audio_dir / "listen.wav"
+    print(f"recording {seconds}s from camera audio...", flush=True)
+    r = subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-rtsp_transport", "tcp",
+            "-i", rtsp_url(cfg),
+            "-vn",
+            "-t", str(seconds),
+            "-ac", "1",
+            "-ar", "16000",
+            "-acodec", "pcm_s16le",
+            str(wav_path),
+        ],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        sys.exit(f"ffmpeg failed (rc={r.returncode})\n{r.stderr[-500:]}")
+    print(f"transcribing with whisper {model_size!r}...", flush=True)
+    model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    segments, info = model.transcribe(
+        str(wav_path),
+        language="ja",
+        beam_size=5,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 500},
+        condition_on_previous_text=False,
+        initial_prompt=prompt or None,
+    )
+    lang = getattr(info, "language", "?")
+    prob = getattr(info, "language_probability", 0.0)
+    print(f"---\nlang={lang} ({prob:.2f})")
+    text_lines = []
+    for seg in segments:
+        line = f"[{seg.start:5.1f}-{seg.end:5.1f}] {seg.text.strip()}"
+        print(line)
+        text_lines.append(line)
+    if not text_lines:
+        print("(no speech detected)")
+    transcript_path = audio_dir / "transcript.log"
+    with open(transcript_path, "a", encoding="utf-8") as f:
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"\n=== {ts} (listen-once {seconds}s, model={model_size}) ===\n")
+        for line in text_lines:
+            f.write(line + "\n")
+    print(f"---\nappended to {transcript_path}")
+
+
 def cmd_setup_pass():
     try:
         import keyring
@@ -446,6 +501,12 @@ def main():
     sub.add_parser("setup")
     sub.add_parser("setup-pass", help="save ONVIF password to OS keyring (run once)")
     sub.add_parser("forget-pass", help="remove the keyring entry")
+    listen = sub.add_parser("listen", help="record camera audio and transcribe (Whisper)")
+    listen.add_argument("seconds", type=int, nargs="?", default=10)
+    listen.add_argument("--model", default="base",
+                        help="whisper model size: tiny / base / small / medium / large-v3")
+    listen.add_argument("--prompt", default="",
+                        help="initial_prompt hint to bias the recognizer (固有名詞・文脈)")
     pan = sub.add_parser("pan")
     pan.add_argument("direction", choices=list(VEL))
     pan.add_argument("seconds", type=float, nargs="?", default=0.5)
@@ -481,6 +542,8 @@ def main():
             cmd_watch_status(cfg)
     elif args.cmd == "zoom":
         cmd_zoom(cfg, args.bbox)
+    elif args.cmd == "listen":
+        cmd_listen_once(cfg, args.seconds, args.model, args.prompt)
 
 
 if __name__ == "__main__":
